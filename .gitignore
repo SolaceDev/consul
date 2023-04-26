@@ -71,3 +71,4 @@ terraform.rc
 /go.work
 /go.work.sum
 .docker
+.cache
