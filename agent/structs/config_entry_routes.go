@@ -1,11 +1,13 @@
 package structs
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/hashicorp/consul/acl"
 	"github.com/miekg/dns"
+
+	"github.com/hashicorp/consul/acl"
 )
 
 // BoundRoute indicates a route that has parent gateways which
@@ -80,6 +82,7 @@ func (e *HTTPRouteConfigEntry) Normalize() error {
 		if parent.Kind == "" {
 			parent.Kind = APIGateway
 		}
+		parent.EnterpriseMeta.Merge(e.GetEnterpriseMeta())
 		parent.EnterpriseMeta.Normalize()
 		e.Parents[i] = parent
 	}
@@ -90,7 +93,7 @@ func (e *HTTPRouteConfigEntry) Normalize() error {
 		}
 
 		for j, service := range rule.Services {
-			rule.Services[j] = normalizeHTTPService(service)
+			rule.Services[j] = e.normalizeHTTPService(service)
 		}
 		e.Rules[i] = rule
 	}
@@ -98,7 +101,8 @@ func (e *HTTPRouteConfigEntry) Normalize() error {
 	return nil
 }
 
-func normalizeHTTPService(service HTTPService) HTTPService {
+func (e *HTTPRouteConfigEntry) normalizeHTTPService(service HTTPService) HTTPService {
+	service.EnterpriseMeta.Merge(e.GetEnterpriseMeta())
 	service.EnterpriseMeta.Normalize()
 	if service.Weight <= 0 {
 		service.Weight = 1
@@ -137,10 +141,17 @@ func (e *HTTPRouteConfigEntry) Validate() error {
 		APIGateway: true,
 	}
 
+	uniques := make(map[ResourceReference]struct{}, len(e.Parents))
+
 	for _, parent := range e.Parents {
 		if !validParentKinds[parent.Kind] {
 			return fmt.Errorf("unsupported parent kind: %q, must be 'api-gateway'", parent.Kind)
 		}
+
+		if _, ok := uniques[parent]; ok {
+			return errors.New("route parents must be unique")
+		}
+		uniques[parent] = struct{}{}
 	}
 
 	if err := validateConfigEntryMeta(e.Meta); err != nil {
@@ -443,7 +454,7 @@ type HTTPService struct {
 	// to routing it to the upstream service
 	Filters HTTPFilters
 
-	acl.EnterpriseMeta
+	acl.EnterpriseMeta `hcl:",squash" mapstructure:",squash"`
 }
 
 func (s HTTPService) ServiceName() ServiceName {
@@ -506,11 +517,13 @@ func (e *TCPRouteConfigEntry) Normalize() error {
 		if parent.Kind == "" {
 			parent.Kind = APIGateway
 		}
+		parent.EnterpriseMeta.Merge(e.GetEnterpriseMeta())
 		parent.EnterpriseMeta.Normalize()
 		e.Parents[i] = parent
 	}
 
 	for i, service := range e.Services {
+		service.EnterpriseMeta.Merge(e.GetEnterpriseMeta())
 		service.EnterpriseMeta.Normalize()
 		e.Services[i] = service
 	}
@@ -526,10 +539,19 @@ func (e *TCPRouteConfigEntry) Validate() error {
 	if len(e.Services) > 1 {
 		return fmt.Errorf("tcp-route currently only supports one service")
 	}
+
+	uniques := make(map[ResourceReference]struct{}, len(e.Parents))
+
 	for _, parent := range e.Parents {
 		if !validParentKinds[parent.Kind] {
 			return fmt.Errorf("unsupported parent kind: %q, must be 'api-gateway'", parent.Kind)
 		}
+
+		if _, ok := uniques[parent]; ok {
+			return errors.New("route parents must be unique")
+		}
+		uniques[parent] = struct{}{}
+
 	}
 
 	if err := validateConfigEntryMeta(e.Meta); err != nil {
@@ -555,7 +577,7 @@ func (e *TCPRouteConfigEntry) CanWrite(authz acl.Authorizer) error {
 type TCPService struct {
 	Name string
 
-	acl.EnterpriseMeta
+	acl.EnterpriseMeta `hcl:",squash" mapstructure:",squash"`
 }
 
 func (s TCPService) ServiceName() ServiceName {

@@ -22,13 +22,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 
-	hcpconfig "github.com/hashicorp/consul/agent/hcp/config"
-
 	"github.com/hashicorp/consul/acl"
 	"github.com/hashicorp/consul/agent/cache"
 	"github.com/hashicorp/consul/agent/checks"
 	"github.com/hashicorp/consul/agent/consul"
 	consulrate "github.com/hashicorp/consul/agent/consul/rate"
+	hcpconfig "github.com/hashicorp/consul/agent/hcp/config"
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/agent/token"
 	"github.com/hashicorp/consul/lib"
@@ -44,6 +43,7 @@ type testCase struct {
 	desc             string
 	args             []string
 	setup            func() // TODO: accept a testing.T instead of panic
+	cleanup          func()
 	expected         func(rt *RuntimeConfig)
 	expectedErr      string
 	expectedWarnings []string
@@ -2296,6 +2296,76 @@ func TestLoad_IntegrationWithFlags(t *testing.T) {
 		expected: func(rt *RuntimeConfig) {
 			rt.DataDir = dataDir
 			rt.HTTPUseCache = false
+		},
+	})
+	run(t, testCase{
+		desc: "cloud resource id from env",
+		args: []string{
+			`-server`,
+			`-data-dir=` + dataDir,
+		},
+		setup: func() {
+			os.Setenv("HCP_RESOURCE_ID", "env-id")
+		},
+		cleanup: func() {
+			os.Unsetenv("HCP_RESOURCE_ID")
+		},
+		expected: func(rt *RuntimeConfig) {
+			rt.DataDir = dataDir
+			rt.Cloud = hcpconfig.CloudConfig{
+				// ID is only populated from env if not populated from other sources.
+				ResourceID: "env-id",
+			}
+
+			// server things
+			rt.ServerMode = true
+			rt.Telemetry.EnableHostMetrics = true
+			rt.TLS.ServerMode = true
+			rt.LeaveOnTerm = false
+			rt.SkipLeaveOnInt = true
+			rt.RPCConfig.EnableStreaming = true
+			rt.GRPCTLSPort = 8503
+			rt.GRPCTLSAddrs = []net.Addr{defaultGrpcTlsAddr}
+		},
+	})
+	run(t, testCase{
+		desc: "cloud resource id from file",
+		args: []string{
+			`-server`,
+			`-data-dir=` + dataDir,
+		},
+		setup: func() {
+			os.Setenv("HCP_RESOURCE_ID", "env-id")
+		},
+		cleanup: func() {
+			os.Unsetenv("HCP_RESOURCE_ID")
+		},
+		json: []string{`{
+			  "cloud": {
+              	"resource_id": "file-id" 
+              }
+			}`},
+		hcl: []string{`
+			  cloud = {
+	            resource_id = "file-id" 
+			  }
+			`},
+		expected: func(rt *RuntimeConfig) {
+			rt.DataDir = dataDir
+			rt.Cloud = hcpconfig.CloudConfig{
+				// ID is only populated from env if not populated from other sources.
+				ResourceID: "file-id",
+			}
+
+			// server things
+			rt.ServerMode = true
+			rt.Telemetry.EnableHostMetrics = true
+			rt.TLS.ServerMode = true
+			rt.LeaveOnTerm = false
+			rt.SkipLeaveOnInt = true
+			rt.RPCConfig.EnableStreaming = true
+			rt.GRPCTLSPort = 8503
+			rt.GRPCTLSAddrs = []net.Addr{defaultGrpcTlsAddr}
 		},
 	})
 	run(t, testCase{
@@ -5962,6 +6032,9 @@ func (tc testCase) run(format string, dataDir string) func(t *testing.T) {
 		expected.ACLResolverSettings.EnterpriseMeta = *structs.NodeEnterpriseMetaInPartition(expected.PartitionOrDefault())
 
 		prototest.AssertDeepEqual(t, expected, actual, cmpopts.EquateEmpty())
+		if tc.cleanup != nil {
+			tc.cleanup()
+		}
 	}
 }
 
@@ -6348,6 +6421,7 @@ func TestLoad_FullConfig(t *testing.T) {
 		SerfPortWAN:             8302,
 		ServerMode:              true,
 		ServerName:              "Oerr9n1G",
+		ServerRejoinAgeMax:      604800 * time.Second,
 		ServerPort:              3757,
 		Services: []*structs.ServiceDefinition{
 			{
@@ -6683,6 +6757,7 @@ func TestLoad_FullConfig(t *testing.T) {
 				Expiration: 15 * time.Second,
 				Name:       "ftO6DySn", // notice this is the same as the metrics prefix
 			},
+			EnableHostMetrics: true,
 		},
 		TLS: tlsutil.Config{
 			InternalRPC: tlsutil.ProtocolConfig{
@@ -7092,6 +7167,7 @@ func TestRuntimeConfig_Sanitize(t *testing.T) {
 				},
 			},
 		},
+		ServerRejoinAgeMax: 24 * 7 * time.Hour,
 	}
 
 	b, err := json.MarshalIndent(rt.Sanitized(), "", "    ")

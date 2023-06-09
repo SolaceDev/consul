@@ -47,7 +47,7 @@ func TestGatewayChainSynthesizer_AddHTTPRoute(t *testing.T) {
 		route                     structs.HTTPRouteConfigEntry
 		expectedMatchesByHostname map[string][]hostnameMatch
 	}{
-		"no hostanames": {
+		"no hostnames": {
 			route: structs.HTTPRouteConfigEntry{
 				Kind: structs.HTTPRoute,
 				Name: "route",
@@ -539,15 +539,6 @@ func TestGatewayChainSynthesizer_Synthesize(t *testing.T) {
 				Protocol:    "http",
 				StartNode:   "router:gateway-suffix-9b9265b.default.default",
 				Nodes: map[string]*structs.DiscoveryGraphNode{
-					"resolver:gateway-suffix-9b9265b.default.default.dc1": {
-						Type: "resolver",
-						Name: "gateway-suffix-9b9265b.default.default.dc1",
-						Resolver: &structs.DiscoveryResolver{
-							Target:         "gateway-suffix-9b9265b.default.default.dc1",
-							Default:        true,
-							ConnectTimeout: 5000000000,
-						},
-					},
 					"router:gateway-suffix-9b9265b.default.default": {
 						Type: "router",
 						Name: "gateway-suffix-9b9265b.default.default",
@@ -569,20 +560,6 @@ func TestGatewayChainSynthesizer_Synthesize(t *testing.T) {
 								},
 							},
 							NextNode: "resolver:foo.default.default.dc1",
-						}, {
-							Definition: &structs.ServiceRoute{
-								Match: &structs.ServiceRouteMatch{
-									HTTP: &structs.ServiceRouteHTTPMatch{
-										PathPrefix: "/",
-									},
-								},
-								Destination: &structs.ServiceRouteDestination{
-									Service:   "gateway-suffix-9b9265b",
-									Partition: "default",
-									Namespace: "default",
-								},
-							},
-							NextNode: "resolver:gateway-suffix-9b9265b.default.default.dc1",
 						}},
 					},
 					"resolver:foo.default.default.dc1": {
@@ -590,6 +567,118 @@ func TestGatewayChainSynthesizer_Synthesize(t *testing.T) {
 						Name: "foo.default.default.dc1",
 						Resolver: &structs.DiscoveryResolver{
 							Target:         "foo.default.default.dc1",
+							Default:        true,
+							ConnectTimeout: 5000000000,
+						},
+					},
+				},
+				Targets: map[string]*structs.DiscoveryTarget{
+					"gateway-suffix-9b9265b.default.default.dc1": {
+						ID:             "gateway-suffix-9b9265b.default.default.dc1",
+						Service:        "gateway-suffix-9b9265b",
+						Datacenter:     "dc1",
+						Partition:      "default",
+						Namespace:      "default",
+						ConnectTimeout: 5000000000,
+						SNI:            "gateway-suffix-9b9265b.default.dc1.internal.domain",
+						Name:           "gateway-suffix-9b9265b.default.dc1.internal.domain",
+					},
+					"foo.default.default.dc1": {
+						ID:             "foo.default.default.dc1",
+						Service:        "foo",
+						Datacenter:     "dc1",
+						Partition:      "default",
+						Namespace:      "default",
+						ConnectTimeout: 5000000000,
+						SNI:            "foo.default.dc1.internal.domain",
+						Name:           "foo.default.dc1.internal.domain",
+					},
+				},
+			}},
+		},
+		"HTTPRoute with virtual resolver": {
+			synthesizer: NewGatewayChainSynthesizer("dc1", "domain", "suffix", &structs.APIGatewayConfigEntry{
+				Kind: structs.APIGateway,
+				Name: "gateway",
+			}),
+			httpRoutes: []*structs.HTTPRouteConfigEntry{
+				{
+					Kind: structs.HTTPRoute,
+					Name: "http-route",
+					Rules: []structs.HTTPRouteRule{{
+						Services: []structs.HTTPService{{
+							Name: "foo",
+						}},
+					}},
+				},
+			},
+			chain: &structs.CompiledDiscoveryChain{
+				ServiceName: "foo",
+				Namespace:   "default",
+				Datacenter:  "dc1",
+				StartNode:   "resolver:foo-2.default.default.dc2",
+				Nodes: map[string]*structs.DiscoveryGraphNode{
+					"resolver:foo-2.default.default.dc2": {
+						Type: "resolver",
+						Name: "foo-2.default.default.dc2",
+						Resolver: &structs.DiscoveryResolver{
+							Target:         "foo-2.default.default.dc2",
+							Default:        true,
+							ConnectTimeout: 5000000000,
+						},
+					},
+				},
+			},
+			extra: []*structs.CompiledDiscoveryChain{},
+			expectedIngressServices: []structs.IngressService{{
+				Name:  "gateway-suffix-9b9265b",
+				Hosts: []string{"*"},
+			}},
+			expectedDiscoveryChains: []*structs.CompiledDiscoveryChain{{
+				ServiceName: "gateway-suffix-9b9265b",
+				Partition:   "default",
+				Namespace:   "default",
+				Datacenter:  "dc1",
+				Protocol:    "http",
+				StartNode:   "router:gateway-suffix-9b9265b.default.default",
+				Nodes: map[string]*structs.DiscoveryGraphNode{
+					"router:gateway-suffix-9b9265b.default.default": {
+						Type: "router",
+						Name: "gateway-suffix-9b9265b.default.default",
+						Routes: []*structs.DiscoveryRoute{{
+							Definition: &structs.ServiceRoute{
+								Match: &structs.ServiceRouteMatch{
+									HTTP: &structs.ServiceRouteHTTPMatch{
+										PathPrefix: "/",
+									},
+								},
+								Destination: &structs.ServiceRouteDestination{
+									Service:   "foo",
+									Partition: "default",
+									Namespace: "default",
+									RequestHeaders: &structs.HTTPHeaderModifiers{
+										Add: make(map[string]string),
+										Set: make(map[string]string),
+									},
+								},
+							},
+							NextNode: "resolver:foo-2.default.default.dc2",
+						}},
+					},
+					"resolver:foo.default.default.dc1": {
+						Type: "resolver",
+						Name: "foo.default.default.dc1",
+						Resolver: &structs.DiscoveryResolver{
+							Target:         "foo.default.default.dc1",
+							Default:        true,
+							ConnectTimeout: 5000000000,
+						},
+					},
+					"resolver:foo-2.default.default.dc2": {
+						Type: "resolver",
+						Name: "foo-2.default.default.dc2",
+						Resolver: &structs.DiscoveryResolver{
+							Target:         "foo-2.default.default.dc2",
 							Default:        true,
 							ConnectTimeout: 5000000000,
 						},
@@ -704,15 +793,6 @@ func TestGatewayChainSynthesizer_ComplexChain(t *testing.T) {
 				Protocol:    "http",
 				StartNode:   "router:gateway-suffix-9b9265b.default.default",
 				Nodes: map[string]*structs.DiscoveryGraphNode{
-					"resolver:gateway-suffix-9b9265b.default.default.dc1": {
-						Type: "resolver",
-						Name: "gateway-suffix-9b9265b.default.default.dc1",
-						Resolver: &structs.DiscoveryResolver{
-							Target:         "gateway-suffix-9b9265b.default.default.dc1",
-							Default:        true,
-							ConnectTimeout: 5000000000,
-						},
-					},
 					"resolver:service-one.default.default.dc1": {
 						Type: "resolver",
 						Name: "service-one.default.default.dc1",
@@ -770,20 +850,6 @@ func TestGatewayChainSynthesizer_ComplexChain(t *testing.T) {
 								},
 							},
 							NextNode: "splitter:splitter-one.default.default",
-						}, {
-							Definition: &structs.ServiceRoute{
-								Match: &structs.ServiceRouteMatch{
-									HTTP: &structs.ServiceRouteHTTPMatch{
-										PathPrefix: "/",
-									},
-								},
-								Destination: &structs.ServiceRouteDestination{
-									Service:   "gateway-suffix-9b9265b",
-									Partition: "default",
-									Namespace: "default",
-								},
-							},
-							NextNode: "resolver:gateway-suffix-9b9265b.default.default.dc1",
 						}},
 					},
 					"splitter:splitter-one.default.default": {

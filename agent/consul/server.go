@@ -34,11 +34,13 @@ import (
 	"github.com/hashicorp/consul-net-rpc/net/rpc"
 
 	"github.com/hashicorp/consul/acl"
+	"github.com/hashicorp/consul/agent/blockingquery"
 	"github.com/hashicorp/consul/agent/consul/authmethod"
 	"github.com/hashicorp/consul/agent/consul/authmethod/ssoauth"
 	"github.com/hashicorp/consul/agent/consul/fsm"
 	"github.com/hashicorp/consul/agent/consul/multilimiter"
 	rpcRate "github.com/hashicorp/consul/agent/consul/rate"
+	"github.com/hashicorp/consul/agent/consul/reporting"
 	"github.com/hashicorp/consul/agent/consul/state"
 	"github.com/hashicorp/consul/agent/consul/stream"
 	"github.com/hashicorp/consul/agent/consul/usagemetrics"
@@ -52,6 +54,7 @@ import (
 	agentgrpc "github.com/hashicorp/consul/agent/grpc-internal"
 	"github.com/hashicorp/consul/agent/grpc-internal/services/subscribe"
 	"github.com/hashicorp/consul/agent/hcp"
+	hcpclient "github.com/hashicorp/consul/agent/hcp/client"
 	logdrop "github.com/hashicorp/consul/agent/log-drop"
 	"github.com/hashicorp/consul/agent/metadata"
 	"github.com/hashicorp/consul/agent/pool"
@@ -157,6 +160,8 @@ type raftStore interface {
 }
 
 const requestLimitsBurstMultiplier = 10
+
+var _ blockingquery.FSMServer = (*Server)(nil)
 
 // Server is Consul server which manages the service discovery,
 // health checking, DC forwarding, Raft, and multiple Serf pools.
@@ -409,6 +414,21 @@ type Server struct {
 	// embedded struct to hold all the enterprise specific data
 	EnterpriseServer
 	operatorServer *operator.Server
+
+	// handles metrics reporting to HashiCorp
+	reportingManager *reporting.ReportingManager
+}
+
+func (s *Server) DecrementBlockingQueries() uint64 {
+	return atomic.AddUint64(&s.queriesBlocking, ^uint64(0))
+}
+
+func (s *Server) GetShutdownChannel() chan struct{} {
+	return s.shutdownCh
+}
+
+func (s *Server) IncrementBlockingQueries() uint64 {
+	return atomic.AddUint64(&s.queriesBlocking, 1)
 }
 
 type connHandler interface {
@@ -728,6 +748,9 @@ func NewServer(config *Config, flat Deps, externalGRPCServer *grpc.Server, incom
 	s.overviewManager = NewOverviewManager(s.logger, s.fsm, s.config.MetricsReportingInterval)
 	go s.overviewManager.Run(&lib.StopChannelContext{StopCh: s.shutdownCh})
 
+	s.reportingManager = reporting.NewReportingManager(s.logger, getEnterpriseReportingDeps(flat), s, s.fsm.State())
+	go s.reportingManager.Run(&lib.StopChannelContext{StopCh: s.shutdownCh})
+
 	// Initialize external gRPC server - register services on external gRPC server.
 	s.externalACLServer = aclgrpc.NewServer(aclgrpc.Config{
 		ACLsEnabled: s.config.ACLsEnabled,
@@ -860,6 +883,7 @@ func newGRPCHandlerFromConfig(deps Deps, config *Config, s *Server) connHandler 
 		Datacenter:     config.Datacenter,
 		ConnectEnabled: config.ConnectEnabled,
 		PeeringEnabled: config.PeeringEnabled,
+		FSMServer:      s,
 	})
 	s.peeringServer = p
 	o := operator.NewServer(operator.Config{
@@ -1043,7 +1067,7 @@ func (s *Server) setupRaft() error {
 		log = cacheStore
 
 		// Create the snapshot store.
-		snapshots, err := raft.NewFileSnapshotStoreWithLogger(path, snapshotsRetained, s.logger.Named("snapshot"))
+		snapshots, err := raft.NewFileSnapshotStoreWithLogger(path, snapshotsRetained, s.logger.Named("raft.snapshot"))
 		if err != nil {
 			return err
 		}
@@ -1669,6 +1693,13 @@ func (s *Server) FSM() *fsm.FSM {
 	return s.fsm
 }
 
+func (s *Server) GetState() *state.Store {
+	if s == nil || s.FSM() == nil {
+		return nil
+	}
+	return s.FSM().State()
+}
+
 // Stats is used to return statistics for debugging and insight
 // for various sub-systems
 func (s *Server) Stats() map[string]map[string]string {
@@ -1745,6 +1776,8 @@ func (s *Server) ReloadConfig(config ReloadableConfig) error {
 	if err := s.raft.ReloadConfig(raftCfg); err != nil {
 		return err
 	}
+
+	s.updateReportingConfig(config)
 
 	s.rpcLimiter.Store(rate.NewLimiter(config.RPCRateLimit, config.RPCMaxBurst))
 
@@ -1850,13 +1883,14 @@ func (s *Server) trackLeaderChanges() {
 // hcpServerStatus is the callback used by the HCP manager to emit status updates to the HashiCorp Cloud Platform when
 // enabled.
 func (s *Server) hcpServerStatus(deps Deps) hcp.StatusCallback {
-	return func(ctx context.Context) (status hcp.ServerStatus, err error) {
+	return func(ctx context.Context) (status hcpclient.ServerStatus, err error) {
 		status.Name = s.config.NodeName
 		status.ID = string(s.config.NodeID)
 		status.Version = cslversion.GetHumanVersion()
 		status.LanAddress = s.config.RPCAdvertise.IP.String()
 		status.GossipPort = s.config.SerfLANConfig.MemberlistConfig.AdvertisePort
 		status.RPCPort = s.config.RPCAddr.Port
+		status.Datacenter = s.config.Datacenter
 
 		tlsCert := s.tlsConfigurator.Cert()
 		if tlsCert != nil {
@@ -1897,6 +1931,8 @@ func (s *Server) hcpServerStatus(deps Deps) hcp.StatusCallback {
 		if deps.HCP.Provider != nil {
 			status.ScadaStatus = deps.HCP.Provider.SessionStatus()
 		}
+
+		status.ACL.Enabled = s.config.ACLsEnabled
 
 		return status, nil
 	}

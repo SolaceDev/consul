@@ -36,18 +36,24 @@ func TestACL_Upgrade_Node_Token(t *testing.T) {
 
 	run := func(t *testing.T, tc testcase) {
 		// NOTE: Disable auto.encrypt due to its conflict with ACL token during bootstrap
-		cluster, _, _ := libtopology.NewPeeringCluster(t, 1, &libcluster.BuildOptions{
-			Datacenter:           "dc1",
-			ConsulVersion:        tc.oldversion,
-			InjectAutoEncryption: false,
-			ACLEnabled:           true,
+		cluster, _, _ := libtopology.NewCluster(t, &libtopology.ClusterConfig{
+			NumServers: 1,
+			NumClients: 1,
+			BuildOpts: &libcluster.BuildOptions{
+				Datacenter:           "dc1",
+				ConsulImageName:      utils.GetLatestImageName(),
+				ConsulVersion:        tc.oldversion,
+				InjectAutoEncryption: false,
+				ACLEnabled:           true,
+			},
+			ApplyDefaultProxySettings: true,
 		})
 
 		agentToken, err := cluster.CreateAgentToken("dc1",
 			cluster.Agents[1].GetAgentName())
 		require.NoError(t, err)
 
-		err = cluster.StandardUpgrade(t, context.Background(), tc.targetVersion)
+		err = cluster.StandardUpgrade(t, context.Background(), utils.GetTargetImageName(), tc.targetVersion)
 		require.NoError(t, err)
 
 		// Post upgrade validation: agent token can be used to query the node

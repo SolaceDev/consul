@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	mathrand "math/rand"
 	"net"
@@ -4819,19 +4820,19 @@ services {
 
 	deadlineCh := time.After(10 * time.Second)
 	start := time.Now()
+LOOP:
 	for {
 		select {
 		case evt := <-ch:
 			// We may receive several notifications of an error until we get the
 			// first successful reply.
 			require.Equal(t, "foo", evt.CorrelationID)
-			if evt.Err == nil {
-				require.NoError(t, evt.Err)
-				require.NotNil(t, evt.Result)
-				t.Logf("took %s to get first success", time.Since(start))
-				return
+			if evt.Err != nil {
+				break LOOP
 			}
-			t.Logf("saw error: %v", evt.Err)
+			require.NoError(t, evt.Err)
+			require.NotNil(t, evt.Result)
+			t.Logf("took %s to get first success", time.Since(start))
 		case <-deadlineCh:
 			t.Fatal("did not get notified successfully")
 		}
@@ -6198,6 +6199,70 @@ cloud {
 
 	_, err = api.NewClient(&api.Config{Address: l.Addr().String()})
 	require.NoError(t, err)
+}
+
+func TestAgent_checkServerLastSeen(t *testing.T) {
+	bd := BaseDeps{
+		Deps: consul.Deps{
+			Logger:       hclog.NewInterceptLogger(nil),
+			Tokens:       new(token.Store),
+			GRPCConnPool: &fakeGRPCConnPool{},
+		},
+		RuntimeConfig: &config.RuntimeConfig{},
+		Cache:         cache.New(cache.Options{}),
+	}
+	agent, err := New(bd)
+	require.NoError(t, err)
+
+	// Test that an ErrNotExist OS error is treated as ok.
+	t.Run("TestReadErrNotExist", func(t *testing.T) {
+		readFn := func(filename string) (*consul.ServerMetadata, error) {
+			return nil, os.ErrNotExist
+		}
+
+		err := agent.checkServerLastSeen(readFn)
+		require.NoError(t, err)
+	})
+
+	// Test that an error reading server metadata is treated as an error.
+	t.Run("TestReadErr", func(t *testing.T) {
+		expected := errors.New("read error")
+		readFn := func(filename string) (*consul.ServerMetadata, error) {
+			return nil, expected
+		}
+
+		err := agent.checkServerLastSeen(readFn)
+		require.ErrorIs(t, err, expected)
+	})
+
+	// Test that a server with a 7d old last seen timestamp is treated as an error.
+	t.Run("TestIsLastSeenStaleErr", func(t *testing.T) {
+		agent.config.ServerRejoinAgeMax = time.Hour
+
+		readFn := func(filename string) (*consul.ServerMetadata, error) {
+			return &consul.ServerMetadata{
+				LastSeenUnix: time.Now().Add(-24 * 7 * time.Hour).Unix(),
+			}, nil
+		}
+
+		err := agent.checkServerLastSeen(readFn)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "refusing to rejoin cluster because server has been offline for more than the configured server_rejoin_age_max")
+	})
+
+	// Test that a server with a 6h old last seen timestamp is not treated as an error.
+	t.Run("TestNoErr", func(t *testing.T) {
+		agent.config.ServerRejoinAgeMax = 24 * 7 * time.Hour
+
+		readFn := func(filename string) (*consul.ServerMetadata, error) {
+			return &consul.ServerMetadata{
+				LastSeenUnix: time.Now().Add(-6 * time.Hour).Unix(),
+			}, nil
+		}
+
+		err := agent.checkServerLastSeen(readFn)
+		require.NoError(t, err)
+	})
 }
 
 func getExpectedCaPoolByFile(t *testing.T) *x509.CertPool {

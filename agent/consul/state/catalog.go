@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-memdb"
-	"github.com/mitchellh/copystructure"
 
 	"github.com/hashicorp/consul/acl"
 	"github.com/hashicorp/consul/agent/configentry"
@@ -1186,7 +1185,7 @@ func serviceListTxn(tx ReadTxn, ws memdb.WatchSet, entMeta *acl.EnterpriseMeta, 
 	unique := make(map[structs.ServiceName]struct{})
 	for service := services.Next(); service != nil; service = services.Next() {
 		svc := service.(*structs.ServiceNode)
-		unique[svc.CompoundServiceName()] = struct{}{}
+		unique[svc.CompoundServiceName().ServiceName] = struct{}{}
 	}
 
 	results := make(structs.ServiceList, 0, len(unique))
@@ -1920,17 +1919,17 @@ func (s *Store) deleteServiceTxn(tx WriteTxn, idx uint64, nodeName, serviceID st
 		return fmt.Errorf("failed updating service-kind indexes: %w", err)
 	}
 	// Update the node indexes as the service information is included in node catalog queries.
-	if err := catalogUpdateNodesIndexes(tx, idx, entMeta, peerName); err != nil {
+	if err := catalogUpdateNodesIndexes(tx, idx, entMeta, svc.PeerName); err != nil {
 		return fmt.Errorf("failed updating nodes indexes: %w", err)
 	}
-	if err := catalogUpdateNodeIndexes(tx, idx, nodeName, entMeta, peerName); err != nil {
+	if err := catalogUpdateNodeIndexes(tx, idx, nodeName, entMeta, svc.PeerName); err != nil {
 		return fmt.Errorf("failed updating node indexes: %w", err)
 	}
 
-	name := svc.CompoundServiceName()
+	psn := svc.CompoundServiceName()
 
 	if err := cleanupMeshTopology(tx, idx, svc); err != nil {
-		return fmt.Errorf("failed to clean up mesh-topology associations for %q: %v", name.String(), err)
+		return fmt.Errorf("failed to clean up mesh-topology associations for %q: %v", psn.String(), err)
 	}
 
 	q := Query{
@@ -1957,12 +1956,14 @@ func (s *Store) deleteServiceTxn(tx WriteTxn, idx uint64, nodeName, serviceID st
 			if err := catalogUpdateServiceExtinctionIndex(tx, idx, entMeta, svc.PeerName); err != nil {
 				return err
 			}
-			psn := structs.PeeredServiceName{Peer: svc.PeerName, ServiceName: name}
 			if err := freeServiceVirtualIP(tx, idx, psn, nil); err != nil {
-				return fmt.Errorf("failed to clean up virtual IP for %q: %v", name.String(), err)
+				return fmt.Errorf("failed to clean up virtual IP for %q: %v", psn.String(), err)
 			}
-			if err := cleanupKindServiceName(tx, idx, svc.CompoundServiceName(), svc.ServiceKind); err != nil {
-				return fmt.Errorf("failed to persist service name: %v", err)
+
+			if svc.PeerName == "" {
+				if err := cleanupKindServiceName(tx, idx, psn.ServiceName, svc.ServiceKind); err != nil {
+					return fmt.Errorf("failed to persist service name: %v", err)
+				}
 			}
 		}
 	} else {
@@ -1990,7 +1991,7 @@ func (s *Store) deleteServiceTxn(tx WriteTxn, idx uint64, nodeName, serviceID st
 	if svc.PeerName == "" {
 		sn := structs.ServiceName{Name: svc.ServiceName, EnterpriseMeta: svc.EnterpriseMeta}
 		if err := cleanupGatewayWildcards(tx, idx, sn, false); err != nil {
-			return fmt.Errorf("failed to clean up gateway-service associations for %q: %v", name.String(), err)
+			return fmt.Errorf("failed to clean up gateway-service associations for %q: %v", psn.String(), err)
 		}
 	}
 
@@ -2695,7 +2696,7 @@ func (s *Store) CheckIngressServiceNodes(ws memdb.WatchSet, serviceName string, 
 	// De-dup services to lookup
 	names := make(map[structs.ServiceName]struct{})
 	for _, n := range nodes {
-		names[n.CompoundServiceName()] = struct{}{}
+		names[n.CompoundServiceName().ServiceName] = struct{}{}
 	}
 
 	var results structs.CheckServiceNodes
@@ -3657,7 +3658,7 @@ func updateGatewayNamespace(tx WriteTxn, idx uint64, service *structs.GatewaySer
 			continue
 		}
 
-		existing, err := tx.First(tableGatewayServices, indexID, service.Gateway, sn.CompoundServiceName(), service.Port)
+		existing, err := tx.First(tableGatewayServices, indexID, service.Gateway, sn.CompoundServiceName().ServiceName, service.Port)
 		if err != nil {
 			return fmt.Errorf("gateway service lookup failed: %s", err)
 		}
@@ -4562,14 +4563,7 @@ func updateMeshTopology(tx WriteTxn, idx uint64, node string, svc *structs.NodeS
 
 		var mapping *upstreamDownstream
 		if existing, ok := obj.(*upstreamDownstream); ok {
-			rawCopy, err := copystructure.Copy(existing)
-			if err != nil {
-				return fmt.Errorf("failed to copy existing topology mapping: %v", err)
-			}
-			mapping, ok = rawCopy.(*upstreamDownstream)
-			if !ok {
-				return fmt.Errorf("unexpected topology type %T", rawCopy)
-			}
+			mapping := existing.DeepCopy()
 			mapping.Refs[uid] = struct{}{}
 			mapping.ModifyIndex = idx
 
@@ -4611,7 +4605,10 @@ func updateMeshTopology(tx WriteTxn, idx uint64, node string, svc *structs.NodeS
 // cleanupMeshTopology removes a service from the mesh topology table
 // This is only safe to call when there are no more known instances of this proxy
 func cleanupMeshTopology(tx WriteTxn, idx uint64, service *structs.ServiceNode) error {
-	// TODO(peering): make this peering aware?
+	if service.PeerName != "" {
+		return nil
+	}
+
 	if service.ServiceKind != structs.ServiceKindConnectProxy {
 		return nil
 	}
@@ -4632,14 +4629,7 @@ func cleanupMeshTopology(tx WriteTxn, idx uint64, service *structs.ServiceNode) 
 
 	// Do the updates in a separate loop so we don't trash the iterator.
 	for _, m := range mappings {
-		rawCopy, err := copystructure.Copy(m)
-		if err != nil {
-			return fmt.Errorf("failed to copy existing topology mapping: %v", err)
-		}
-		copy, ok := rawCopy.(*upstreamDownstream)
-		if !ok {
-			return fmt.Errorf("unexpected topology type %T", rawCopy)
-		}
+		copy := m.DeepCopy()
 
 		// Bail early if there's no reference to the proxy ID we're deleting
 		if _, ok := copy.Refs[uid]; !ok {

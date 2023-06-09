@@ -2,6 +2,7 @@ package utils
 
 import (
 	"flag"
+	"strings"
 
 	"github.com/hashicorp/go-version"
 )
@@ -33,9 +34,17 @@ func init() {
 	flag.BoolVar(&FollowLog, "follow-log", true, "follow container log in output (Default: true)")
 }
 
+func GetTargetImageName() string {
+	return TargetImageName
+}
+
+func GetLatestImageName() string {
+	return LatestImageName
+}
+
 func DockerImage(image, version string) string {
 	v := image + ":" + version
-	if image == DefaultImageNameENT && isSemVer(version) {
+	if strings.Contains(image, DefaultImageNameENT) && isSemVer(version) {
 		// Enterprise versions get a suffix.
 		v += ImageVersionSuffixENT
 	}

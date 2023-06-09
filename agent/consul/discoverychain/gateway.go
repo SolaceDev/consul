@@ -128,6 +128,29 @@ func (l *GatewayChainSynthesizer) Synthesize(chains ...*structs.CompiledDiscover
 			return nil, nil, err
 		}
 
+		node := compiled.Nodes[compiled.StartNode]
+		if node.IsRouter() {
+			resolverPrefix := structs.DiscoveryGraphNodeTypeResolver + ":" + node.Name
+
+			// clean out the clusters that will get added for the router
+			for name := range compiled.Nodes {
+				if strings.HasPrefix(name, resolverPrefix) {
+					delete(compiled.Nodes, name)
+				}
+			}
+
+			// clean out the route rules that'll get added for the router
+			filtered := []*structs.DiscoveryRoute{}
+			for _, route := range node.Routes {
+				if strings.HasPrefix(route.NextNode, resolverPrefix) {
+					continue
+				}
+				filtered = append(filtered, route)
+			}
+			node.Routes = filtered
+		}
+		compiled.Nodes[compiled.StartNode] = node
+
 		// fix up the nodes for the terminal targets to either be a splitter or resolver if there is no splitter present
 		for name, node := range compiled.Nodes {
 			switch node.Type {
@@ -206,6 +229,13 @@ func targetForResolverNode(nodeName string, chains []*structs.CompiledDiscoveryC
 	splitterName := splitterPrefix + strings.TrimPrefix(nodeName, resolverPrefix)
 
 	for _, c := range chains {
+		targetChainPrefix := resolverPrefix + c.ServiceName + "."
+		if strings.HasPrefix(nodeName, targetChainPrefix) && len(c.Nodes) == 1 {
+			// we have a virtual resolver that just maps to another resolver, return
+			// the given node name
+			return c.StartNode
+		}
+
 		for name, node := range c.Nodes {
 			if node.IsSplitter() && strings.HasPrefix(splitterName, name) {
 				return name

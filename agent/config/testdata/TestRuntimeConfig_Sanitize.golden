@@ -79,8 +79,6 @@
     "BootstrapExpect": 0,
     "BuildDate": "2019-11-20 05:00:00 +0000 UTC",
     "Cache": {
-        "CacheRefreshBackoffMin": 0,
-        "CacheRefreshMaxWait": "0s",
         "EntryFetchMaxBurst": 42,
         "EntryFetchRate": 0.334,
         "Logger": null
@@ -133,8 +131,10 @@
         "ClientID": "id",
         "ClientSecret": "hidden",
         "Hostname": "",
+        "ManagementToken": "hidden",
         "ResourceID": "cluster1",
-        "ScadaAddress": ""
+        "ScadaAddress": "",
+        "TLSConfig": null
     },
     "ConfigEntryBootstrap": [],
     "ConnectCAConfig": {},
@@ -291,6 +291,11 @@
     "ReconnectTimeoutLAN": "0s",
     "ReconnectTimeoutWAN": "0s",
     "RejoinAfterLeave": false,
+    "Reporting": {
+        "License": {
+            "Enabled": false
+        }
+    },
     "RequestLimitsMode": 0,
     "RequestLimitsReadRate": 0,
     "RequestLimitsWriteRate": 0,
@@ -323,6 +328,7 @@
     "ServerMode": false,
     "ServerName": "",
     "ServerPort": 0,
+    "ServerRejoinAgeMax": "168h0m0s",
     "Services": [
         {
             "Address": "",
@@ -454,6 +460,7 @@
         "DisableHostname": false,
         "DogstatsdAddr": "",
         "DogstatsdTags": [],
+        "EnableHostMetrics": false,
         "FilterDefault": false,
         "MetricsPrefix": "",
         "PrometheusOpts": {

@@ -1,12 +1,14 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/armon/go-metrics"
 	"github.com/armon/go-metrics/prometheus"
 	"github.com/hashicorp/go-hclog"
 	wal "github.com/hashicorp/raft-wal"
@@ -37,6 +39,7 @@ import (
 	"github.com/hashicorp/consul/agent/xds"
 	"github.com/hashicorp/consul/ipaddr"
 	"github.com/hashicorp/consul/lib"
+	"github.com/hashicorp/consul/lib/hoststats"
 	"github.com/hashicorp/consul/logging"
 	"github.com/hashicorp/consul/tlsutil"
 )
@@ -53,6 +56,9 @@ type BaseDeps struct {
 	Cache         *cache.Cache
 	ViewStore     *submatview.Store
 	WatchedFiles  []string
+
+	deregisterBalancer, deregisterResolver func()
+	stopHostCollector                      context.CancelFunc
 }
 
 type ConfigLoader func(source config.Source) (config.LoadResult, error)
@@ -96,9 +102,25 @@ func NewBaseDeps(configLoader ConfigLoader, logOut io.Writer, providedLogger hcl
 	cfg.Telemetry.PrometheusOpts.CounterDefinitions = counters
 	cfg.Telemetry.PrometheusOpts.SummaryDefinitions = summaries
 
-	d.MetricsConfig, err = lib.InitTelemetry(cfg.Telemetry, d.Logger)
+	var extraSinks []metrics.MetricSink
+	if cfg.IsCloudEnabled() {
+		d.HCP, err = hcp.NewDeps(cfg.Cloud, d.Logger.Named("hcp"), cfg.NodeID)
+		if err != nil {
+			return d, err
+		}
+		if d.HCP.Sink != nil {
+			extraSinks = append(extraSinks, d.HCP.Sink)
+		}
+	}
+
+	d.MetricsConfig, err = lib.InitTelemetry(cfg.Telemetry, d.Logger, extraSinks...)
 	if err != nil {
 		return d, fmt.Errorf("failed to initialize telemetry: %w", err)
+	}
+	if !cfg.Telemetry.Disable && cfg.Telemetry.EnableHostMetrics {
+		ctx, cancel := context.WithCancel(context.Background())
+		hoststats.NewCollector(ctx, d.Logger, cfg.DataDir)
+		d.stopHostCollector = cancel
 	}
 
 	d.TLSConfigurator, err = tlsutil.NewConfigurator(cfg.TLS, d.Logger)
@@ -115,21 +137,30 @@ func NewBaseDeps(configLoader ConfigLoader, logOut io.Writer, providedLogger hcl
 	d.ViewStore = submatview.NewStore(d.Logger.Named("viewstore"))
 	d.ConnPool = newConnPool(cfg, d.Logger, d.TLSConfigurator)
 
+	agentType := "client"
+	if cfg.ServerMode {
+		agentType = "server"
+	}
+
 	resolverBuilder := resolver.NewServerResolverBuilder(resolver.Config{
+		AgentType:  agentType,
+		Datacenter: cfg.Datacenter,
 		// Set the authority to something sufficiently unique so any usage in
 		// tests would be self-isolating in the global resolver map, while also
 		// not incurring a huge penalty for non-test code.
 		Authority: cfg.Datacenter + "." + string(cfg.NodeID),
 	})
 	resolver.Register(resolverBuilder)
+	d.deregisterResolver = func() {
+		resolver.Deregister(resolverBuilder.Authority())
+	}
 
 	balancerBuilder := balancer.NewBuilder(
-		// Balancer name doesn't really matter, we set it to the resolver authority
-		// to keep it unique for tests.
 		resolverBuilder.Authority(),
 		d.Logger.Named("grpc.balancer"),
 	)
 	balancerBuilder.Register()
+	d.deregisterBalancer = balancerBuilder.Deregister
 
 	d.GRPCConnPool = grpcInt.NewClientConnPool(grpcInt.ClientConnPoolConfig{
 		Servers:               resolverBuilder,
@@ -139,7 +170,6 @@ func NewBaseDeps(configLoader ConfigLoader, logOut io.Writer, providedLogger hcl
 		UseTLSForDC:           d.TLSConfigurator.UseTLS,
 		DialingFromServer:     cfg.ServerMode,
 		DialingFromDatacenter: cfg.Datacenter,
-		BalancerBuilder:       balancerBuilder,
 	})
 	d.LeaderForwarder = resolverBuilder
 
@@ -179,14 +209,21 @@ func NewBaseDeps(configLoader ConfigLoader, logOut io.Writer, providedLogger hcl
 	d.EventPublisher = stream.NewEventPublisher(10 * time.Second)
 
 	d.XDSStreamLimiter = limiter.NewSessionLimiter()
-	if cfg.IsCloudEnabled() {
-		d.HCP, err = hcp.NewDeps(cfg.Cloud, d.Logger)
-		if err != nil {
-			return d, err
-		}
-	}
 
 	return d, nil
+}
+
+// Close cleans up any state and goroutines associated to bd's members not
+// handled by something else (e.g. the agent stop channel).
+func (bd BaseDeps) Close() {
+	bd.AutoConfig.Stop()
+	bd.MetricsConfig.Cancel()
+
+	for _, fn := range []func(){bd.deregisterBalancer, bd.deregisterResolver, bd.stopHostCollector} {
+		if fn != nil {
+			fn()
+		}
+	}
 }
 
 // grpcLogInitOnce because the test suite will call NewBaseDeps in many tests and
@@ -262,6 +299,10 @@ func getPrometheusDefs(cfg *config.RuntimeConfig, isServer bool) ([]prometheus.G
 		Gauges,
 		raftGauges,
 		serverGauges,
+	}
+
+	if cfg.Telemetry.EnableHostMetrics {
+		gauges = append(gauges, hoststats.Gauges)
 	}
 
 	// TODO(ffmmm): conditionally add only leader specific metrics to gauges, counters, summaries, etc

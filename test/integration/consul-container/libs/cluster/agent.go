@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	"io"
 
 	"github.com/testcontainers/testcontainers-go"
 
@@ -17,7 +18,9 @@ type Agent interface {
 	NewClient(string, bool) (*api.Client, error)
 	GetName() string
 	GetAgentName() string
+	GetPartition() string
 	GetPod() testcontainers.Container
+	Logs(context.Context) (io.ReadCloser, error)
 	ClaimAdminPort() (int, error)
 	GetConfig() Config
 	GetInfo() AgentInfo
@@ -36,6 +39,19 @@ type Agent interface {
 //
 // Constructed by (Builder).ToAgentConfig()
 type Config struct {
+	// NodeName is set for the consul agent name and container name
+	// Equivalent to the -node command-line flag.
+	// If empty, a randam name will be generated
+	NodeName string
+	// NodeID is used to configure node_id in agent config file
+	// Equivalent to the -node-id command-line flag.
+	// If empty, a randam name will be generated
+	NodeID string
+
+	// ExternalDataDir is data directory to copy consul data from, if set.
+	// This directory contains subdirectories like raft, serf, services
+	ExternalDataDir string
+
 	ScratchDir    string
 	CertVolume    string
 	CACert        string

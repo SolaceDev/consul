@@ -25,8 +25,6 @@ import (
 	"github.com/hashicorp/memberlist"
 	"golang.org/x/time/rate"
 
-	hcpconfig "github.com/hashicorp/consul/agent/hcp/config"
-
 	"github.com/hashicorp/consul/agent/cache"
 	"github.com/hashicorp/consul/agent/checks"
 	"github.com/hashicorp/consul/agent/connect/ca"
@@ -34,6 +32,7 @@ import (
 	"github.com/hashicorp/consul/agent/consul/authmethod/ssoauth"
 	consulrate "github.com/hashicorp/consul/agent/consul/rate"
 	"github.com/hashicorp/consul/agent/dns"
+	hcpconfig "github.com/hashicorp/consul/agent/hcp/config"
 	"github.com/hashicorp/consul/agent/rpc/middleware"
 	"github.com/hashicorp/consul/agent/structs"
 	"github.com/hashicorp/consul/agent/token"
@@ -1078,6 +1077,7 @@ func (b *builder) build() (rt RuntimeConfig, err error) {
 		ServerMode:                        serverMode,
 		ServerName:                        stringVal(c.ServerName),
 		ServerPort:                        serverPort,
+		ServerRejoinAgeMax:                b.durationValWithDefaultMin("server_rejoin_age_max", c.ServerRejoinAgeMax, 24*7*time.Hour, 6*time.Hour),
 		Services:                          services,
 		SessionTTLMin:                     b.durationVal("session_ttl_min", c.SessionTTLMin),
 		SkipLeaveOnInt:                    skipLeaveOnInt,
@@ -1093,6 +1093,9 @@ func (b *builder) build() (rt RuntimeConfig, err error) {
 		AutoReloadConfigCoalesceInterval:  1 * time.Second,
 		LocalProxyConfigResyncInterval:    30 * time.Second,
 	}
+
+	// host metrics are enabled by default if consul is configured with HashiCorp Cloud Platform integration
+	rt.Telemetry.EnableHostMetrics = boolValWithDefault(c.Telemetry.EnableHostMetrics, rt.IsCloudEnabled())
 
 	rt.TLS, err = b.buildTLSConfig(rt, c.TLS)
 	if err != nil {
@@ -1940,6 +1943,16 @@ func (b *builder) durationValWithDefault(name string, v *string, defaultVal time
 	return d
 }
 
+// durationValWithDefaultMin is equivalent to durationValWithDefault, but enforces a minimum duration.
+func (b *builder) durationValWithDefaultMin(name string, v *string, defaultVal, minVal time.Duration) (d time.Duration) {
+	d = b.durationValWithDefault(name, v, defaultVal)
+	if d < minVal {
+		b.err = multierror.Append(b.err, fmt.Errorf("%s: duration '%s' cannot be less than: %s", name, *v, minVal))
+	}
+
+	return d
+}
+
 func (b *builder) durationVal(name string, v *string) (d time.Duration) {
 	return b.durationValWithDefault(name, v, 0)
 }
@@ -2515,18 +2528,23 @@ func validateAutoConfigAuthorizer(rt RuntimeConfig) error {
 	return nil
 }
 
-func (b *builder) cloudConfigVal(v *CloudConfigRaw) (val hcpconfig.CloudConfig) {
+func (b *builder) cloudConfigVal(v *CloudConfigRaw) hcpconfig.CloudConfig {
+	val := hcpconfig.CloudConfig{
+		ResourceID: os.Getenv("HCP_RESOURCE_ID"),
+	}
 	if v == nil {
 		return val
 	}
 
-	val.ResourceID = stringVal(v.ResourceID)
 	val.ClientID = stringVal(v.ClientID)
 	val.ClientSecret = stringVal(v.ClientSecret)
 	val.AuthURL = stringVal(v.AuthURL)
 	val.Hostname = stringVal(v.Hostname)
 	val.ScadaAddress = stringVal(v.ScadaAddress)
 
+	if resourceID := stringVal(v.ResourceID); resourceID != "" {
+		val.ResourceID = resourceID
+	}
 	return val
 }
 
