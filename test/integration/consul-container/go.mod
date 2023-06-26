@@ -6,8 +6,8 @@ require (
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/docker/docker v20.10.22+incompatible
 	github.com/docker/go-connections v0.4.0
-	github.com/hashicorp/consul/api v1.20.0
-	github.com/hashicorp/consul/envoyextensions v0.1.2
+	github.com/hashicorp/consul/api v1.21.0
+	github.com/hashicorp/consul/envoyextensions v0.2.1
 	github.com/hashicorp/consul/sdk v0.13.1
 	github.com/hashicorp/go-cleanhttp v0.5.2
 	github.com/hashicorp/go-multierror v1.1.1
@@ -71,6 +71,7 @@ require (
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	go.opencensus.io v0.23.0 // indirect
+	golang.org/x/exp v0.0.0-20230321023759-10a507213a29 // indirect
 	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
 	golang.org/x/tools v0.6.0 // indirect

@@ -36,11 +36,11 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.0.1-0.20190118093823-f849b5445de4
 	github.com/hashicorp/consul-awsauth v0.0.0-20220713182709-05ac1c5c2706
 	github.com/hashicorp/consul-net-rpc v0.0.0-20221205195236-156cfab66a69
-	github.com/hashicorp/consul/api v1.20.0
-	github.com/hashicorp/consul/envoyextensions v0.1.2
-	github.com/hashicorp/consul/proto-public v0.2.1
+	github.com/hashicorp/consul/api v1.21.0
+	github.com/hashicorp/consul/envoyextensions v0.2.1
+	github.com/hashicorp/consul/proto-public v0.3.0
 	github.com/hashicorp/consul/sdk v0.13.1
-	github.com/hashicorp/consul/troubleshoot v0.1.2
+	github.com/hashicorp/consul/troubleshoot v0.2.0
 	github.com/hashicorp/go-bexpr v0.1.2
 	github.com/hashicorp/go-checkpoint v0.5.0
 	github.com/hashicorp/go-cleanhttp v0.5.2
@@ -230,7 +230,7 @@ require (
 	go.opencensus.io v0.23.0 // indirect
 	go.opentelemetry.io/otel/trace v1.16.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
-	golang.org/x/exp v0.0.0-20220827204233-334a2380cb91 // indirect
+	golang.org/x/exp v0.0.0-20230321023759-10a507213a29 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/term v0.6.0 // indirect
 	golang.org/x/text v0.8.0 // indirect
