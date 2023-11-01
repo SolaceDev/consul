@@ -342,9 +342,9 @@ func ReadSnapshot(r io.Reader, handler func(header *SnapshotHeader, msg structs.
 		// Decode
 		msg := structs.MessageType(msgType[0])
 
-                if msg == structs.FederationStateRequestType | structs.IgnoreUnknownTypeFlag {
-                   msg = structs.FederationStateRequestType
-                }
+		if msg == structs.FederationStateRequestType|structs.IgnoreUnknownTypeFlag {
+			msg = structs.FederationStateRequestType
+		}
 
 		if err := handler(&header, msg, dec); err != nil {
 			return err
