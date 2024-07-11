@@ -560,6 +560,9 @@ BUG FIXES:
 
 * core: Fix multiple incorrect type conversion for potential overflows [[GH-21251](https://github.com/hashicorp/consul/issues/21251)]
 * core: Fix panic runtime error on AliasCheck [[GH-21339](https://github.com/hashicorp/consul/issues/21339)]
+* dns: Fix a regression where DNS SRV questions were returning duplicate hostnames instead of encoded IPs.
+  This affected Nomad integrations with Consul. [[GH-21361](https://github.com/hashicorp/consul/issues/21361)]
+* dns: Fix a regression where DNS tags using the standard lookup syntax, `tag.name.service.consul`, were being disregarded. [[GH-21361](https://github.com/hashicorp/consul/issues/21361)]
 * dns: Fixes a spam log message "Failed to parse TTL for prepared query..."
   that was always being logged on each prepared query evaluation. [[GH-21381](https://github.com/hashicorp/consul/issues/21381)]
 * terminating-gateway: **(Enterprise Only)** Fixed issue where enterprise metadata applied to linked services was the terminating-gateways enterprise metadata and not the linked services enterprise metadata. [[GH-21382](https://github.com/hashicorp/consul/issues/21382)]
