@@ -1,0 +1,26 @@
+name: FOSSA Scan
+on:
+  pull_request:
+
+permissions:
+  repository-projects: read
+  contents: write
+  id-token: write
+  packages: write
+  actions: write
+
+jobs:
+  fossa_scan:
+    runs-on: ubuntu:latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install FOSSA CLI
+        run: |
+          curl -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | bash ;
+          export FOSSA_API_KEY=${{ secrets.FOSSA_API_KEY }};
+          fossa analyze --without-default-filters --debug --branch fossa-test-consul-v1-20 --unpack-archives
