@@ -49,7 +49,7 @@ func makeLogVerifyReportFn(logger hclog.Logger) verifier.ReportFn {
 		)
 
 		if r.Err == nil {
-			l2.Info("verification checksum OK",
+			l2.Debug("verification checksum OK",
 				"readChecksum", fmt.Sprintf("%08x", r.ReadSum),
 			)
 			return
