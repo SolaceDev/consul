@@ -3,7 +3,7 @@ module github.com/hashicorp/consul/envoyextensions
 go 1.23.10
 
 replace (
-	// github.com/hashicorp/consul/api => ../api
+	github.com/hashicorp/consul/api => ../api
 	github.com/hashicorp/consul/proto-public => ../proto-public
 	github.com/hashicorp/consul/sdk => ../sdk
 )
