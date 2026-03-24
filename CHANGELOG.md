@@ -32,7 +32,6 @@ IMPROVEMENTS:
 * ui: Fixed Consul UI to work in non-secure environments by enabling Ember Data's UUID polyfill for crypto.randomUUID. [[GH-23341](https://github.com/hashicorp/consul/pull/23341)]
 * ui: Fixed Consul UI services page navigation by ensuring route transitions trigger the expected model hook behavior after Ember upgrade. [[GH-23271](https://github.com/hashicorp/consul/pull/23271)]
 * ui: Replaced deprecated SideNav component with AppSideNav for improved navigation structure. [[GH-23289](https://github.com/hashicorp/consul/pull/23289)]
-
 ## 1.22.5 (February 26, 2026)
 
 SECURITY:
