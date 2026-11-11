@@ -23,7 +23,6 @@ sub packages. Additional providers can be added through the
 [Register](https://godoc.org/github.com/hashicorp/go-discover#Register)
 function.
 
- * Aliyun (Alibaba) Cloud [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/aliyun/aliyun_discover.go#L21-L34)
  * Amazon AWS [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/aws/aws_discover.go#L19-L34)
  * DigitalOcean [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/digitalocean/digitalocean_discover.go#L22-L30)
  * Google Cloud [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/gce/gce_discover.go#L23-L43)
@@ -34,7 +33,6 @@ function.
  * Scaleway [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/scaleway/scaleway_discover.go#L14-L22)
  * SoftLayer [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/softlayer/softlayer_discover.go#L16-L25)
  * SRV [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/srv/srv_discover.go#L14-L25)
- * TencentCloud [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/tencentcloud/tencentcloud_discover.go#L23-L37)
  * Triton [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/triton/triton_discover.go#L17-L27)
  * vSphere [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/vsphere/vsphere_discover.go#L145-L157)
  * Packet [Config options](https://github.com/hashicorp/go-discover/blob/8b3ddf4/provider/packet/packet_discover.go#L25-L40)
@@ -47,14 +45,11 @@ register them manually:
 
 HashiCorp maintains acceptance tests that regularly allocate and run tests with
 real resources to verify the behavior of several of these providers. Those
-currently are: Amazon AWS, Microsoft Azure, Google Cloud, DigitalOcean, Triton, Scaleway, AliBaba Cloud, vSphere, and Packet.net.
+currently are: Amazon AWS, Microsoft Azure, Google Cloud, DigitalOcean, Triton, Scaleway, vSphere, and Packet.net.
 
 ### Config Example
 
 ```bash
-# Aliyun (Alibaba) Cloud
-provider=aliyun region=... tag_key=consul tag_value=... access_key_id=... access_key_secret=...
-
 # Amazon AWS
 provider=aws region=eu-west-1 tag_key=consul tag_value=... access_key_id=... secret_access_key=...
 
@@ -84,9 +79,6 @@ provider=softlayer datacenter=dal06 tag_value=consul username=... api_key=...
 
 # SRV
 provider=srv service=consul proto=tcp domain=consul
-
-# TencentCloud
-provider=tencentcloud region=ap-guangzhou tag_key=consul tag_value=... access_key_id=... access_key_secret=...
 
 # Triton
 provider=triton account=testaccount url=https://us-sw-1.api.joyentcloud.com key_id=... tag_key=consul-role tag_value=server
