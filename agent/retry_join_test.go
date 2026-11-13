@@ -14,12 +14,8 @@ import (
 func TestAgentRetryNewDiscover(t *testing.T) {
 	d, err := newDiscover()
 	require.NoError(t, err)
-	expected := []string{
-		"aliyun", "aws", "azure", "digitalocean", "gce", "k8s", "linode",
-		"mdns", "os", "packet", "scaleway", "softlayer", "srv", "tencentcloud",
-		"triton", "vsphere",
-	}
-	require.Equal(t, expected, d.Names())
+	// This build does not contain any go-discover provider.
+	require.Empty(t, d.Names())
 }
 
 func TestAgentRetryJoinAddrs(t *testing.T) {
@@ -45,7 +41,7 @@ func TestAgentRetryJoinAddrs(t *testing.T) {
 			[]string{"192.168.0.12", "192.168.0.13"},
 			[]string{"192.168.0.12", "192.168.0.13"},
 		},
-		{"tries to resolve aws things, which fails but that is fine",
+		{"rejects a go-discover expression, because this build does not contain go-discover",
 			[]string{"192.168.0.12", "provider=aws region=eu-west-1 tag_key=consul tag_value=tag access_key_id=a secret_access_key=a"},
 			[]string{"192.168.0.12"},
 		},
@@ -59,7 +55,7 @@ func TestAgentRetryJoinAddrs(t *testing.T) {
 			bufout := buf.String()
 			require.Equal(t, test.expected, output, bufout)
 			if i == 4 {
-				require.Contains(t, bufout, `Using provider "aws"`)
+				require.Contains(t, bufout, "Cannot discover address")
 			}
 		})
 	}

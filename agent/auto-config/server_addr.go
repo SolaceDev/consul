@@ -9,24 +9,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hashicorp/consul/lib"
-	"github.com/hashicorp/go-discover"
-	discoverk8s "github.com/hashicorp/go-discover/provider/k8s"
+	discover "github.com/hashicorp/consul/lib/nodiscover"
 
 	"github.com/hashicorp/go-hclog"
 )
 
 func (ac *AutoConfig) discoverServers(servers []string) ([]string, error) {
-	providers := make(map[string]discover.Provider)
-	for k, v := range discover.Providers {
-		providers[k] = v
-	}
-	providers["k8s"] = &discoverk8s.Provider{}
-
-	disco, err := discover.New(
-		discover.WithUserAgent(lib.UserAgent()),
-		discover.WithProviders(providers),
-	)
+	disco, err := discover.New()
 
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create go-discover resolver: %w", err)
