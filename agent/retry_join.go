@@ -8,11 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/go-discover"
-	discoverk8s "github.com/hashicorp/go-discover/provider/k8s"
+	discover "github.com/hashicorp/consul/lib/nodiscover"
 	"github.com/hashicorp/go-hclog"
-
-	"github.com/hashicorp/consul/lib"
 )
 
 func (a *Agent) retryJoinLAN() {
@@ -110,16 +107,7 @@ func (a *Agent) refreshPrimaryGatewayFallbackAddresses() {
 }
 
 func newDiscover() (*discover.Discover, error) {
-	providers := make(map[string]discover.Provider)
-	for k, v := range discover.Providers {
-		providers[k] = v
-	}
-	providers["k8s"] = &discoverk8s.Provider{}
-
-	return discover.New(
-		discover.WithUserAgent(lib.UserAgent()),
-		discover.WithProviders(providers),
-	)
+	return discover.New()
 }
 
 func retryJoinAddrs(disco *discover.Discover, variant, cluster string, retryJoin []string, logger hclog.Logger) []string {
